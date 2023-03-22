@@ -1,29 +1,89 @@
-// Next.js API route support: https://nextjs.org/docs/api-routes/introduction
-import type { NextApiRequest, NextApiResponse } from 'next'
-import { fetchHTML } from '@/lib/puppeteer'
+import puppeteer  from "puppeteer-core";
+import chrome from "chrome-aws-lambda";
 
-type Data = {
-  name: string;
-  size: number;
-  error?: any;
-}
+// const disabledResourceType = [
+//   ["stylesheet", true],
+//   ["image", true],
+//   ["media", true],
+//   ["font", true],
+// ];
+// const disabledMap = new Map(disabledResourceType);
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse<Data>
-) {
+export default async function handler(req: any, res: any) {
   try {
-    const html = await fetchHTML(
-      'https://manhua.dmzj.com/tags/search.shtml?s=%E9%AD%94%E6%B3%95%E5%B0%91%E5%A5%B3%E5%B0%B1%E6%98%AF%E6%9C%AC%E5%A4%A7%E7%88%B7',
-      "div.tcaricature_block2"
+    const { target_url, pick_selectors, wait_eval } = req.body;
+    console.log("log ==> ", req.body);
+    if (!target_url) {
+      res.json({ success: false, msg: "无效参数" });
+      return;
+    }
+
+    const browser = await puppeteer.launch(
+      process.env.NODE_ENV === "production"
+        ? {
+            args: chrome.args,
+            executablePath: await chrome.executablePath,
+            headless: chrome.headless,
+          }
+        : {}
     );
-    res.status(200).json({ name: 'John Doe', size: html.length })
+    const page = await browser.newPage();
+
+    // await page.setRequestInterception(true);
+    // page.on("request", (req) => {
+    //   const isHandled =
+    //     typeof req.isInterceptResolutionHandled === "function"
+    //       ? req.isInterceptResolutionHandled()
+    //       : req._interceptionHandled;
+    //   if (isHandled) {
+    //     return;
+    //   }
+    //   if (disabledMap.has(req.resourceType())) {
+    //     req.abort();
+    //   } else {
+    //     req.continue();
+    //   }
+    // });
+
+    await page.goto(target_url);
+    if (wait_eval) {
+      await page.waitForFunction(wait_eval);
+    }
+
+    const html = await page.evaluate(
+      ({ pick_selectors }) => {
+        function getAttributeStr(el: Element) {
+          const attrs: string[] = [];
+          const list = el.getAttributeNames();
+          list.forEach((key) => {
+            const value = el.getAttribute(key);
+            attrs.push(`${key}="${value}"`);
+          });
+          return attrs.join(" ");
+        }
+        if (pick_selectors?.length) {
+          const html = pick_selectors.map((selector: string) => {
+            const section = document.body.querySelector(selector);
+            if (section) {
+              const tag = section.tagName.toLowerCase();
+              const attrs = getAttributeStr(section);
+              return `<${tag} ${attrs}>${section.innerHTML}</${tag}>`;
+            }
+            return "";
+          });
+          if (!html.length) {
+            return document.body.innerHTML;
+          }
+          return `<div id="__remAppFetchHtml__">${html.join("")}</div>`;
+        }
+        return document.body.innerHTML;
+      },
+      { pick_selectors }
+    );
+
+    res.json({ success: true, data: html });
   } catch (e) {
     console.log(e);
-    res.status(200).json({
-      error: e,
-      name: '',
-      size: 0
-    });
+    res.json({ success: false, msg: "服务端错误" });
   }
-}
+};
