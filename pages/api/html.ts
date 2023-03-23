@@ -1,4 +1,5 @@
 import puppeteer  from "puppeteer-core";
+import chrome from 'chrome-aws-lambda';
 
 const disabledMap = new Map([
   ["stylesheet", true],
@@ -16,12 +17,16 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const browser = await puppeteer.connect(
-      process.env.NODE_ENV === "production"
+    const browser = await puppeteer.launch(
+      process.env.NODE_ENV === 'production'
         ? {
-            browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BLESS_TOKEN}`,
+            args: chrome.args,
+            executablePath: await chrome.executablePath,
+            headless: chrome.headless,
           }
-        : {}
+        : {
+          
+        }
     );
     const page = await browser.newPage();
 
@@ -30,6 +35,7 @@ export default async function handler(req: any, res: any) {
       const isHandled =
         typeof req.isInterceptResolutionHandled === "function"
           ? req.isInterceptResolutionHandled()
+          // @ts-ignore
           : req._interceptionHandled;
       if (isHandled) {
         return;
