@@ -1,13 +1,11 @@
 import puppeteer  from "puppeteer-core";
-import chrome from "chrome-aws-lambda";
 
-// const disabledResourceType = [
-//   ["stylesheet", true],
-//   ["image", true],
-//   ["media", true],
-//   ["font", true],
-// ];
-// const disabledMap = new Map(disabledResourceType);
+const disabledMap = new Map([
+  ["stylesheet", true],
+  ["image", true],
+  ["media", true],
+  ["font", true],
+]);
 
 export default async function handler(req: any, res: any) {
   try {
@@ -18,32 +16,30 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const browser = await puppeteer.launch(
+    const browser = await puppeteer.connect(
       process.env.NODE_ENV === "production"
         ? {
-            args: chrome.args,
-            executablePath: await chrome.executablePath,
-            headless: chrome.headless,
+            browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BLESS_TOKEN}`,
           }
         : {}
     );
     const page = await browser.newPage();
 
-    // await page.setRequestInterception(true);
-    // page.on("request", (req) => {
-    //   const isHandled =
-    //     typeof req.isInterceptResolutionHandled === "function"
-    //       ? req.isInterceptResolutionHandled()
-    //       : req._interceptionHandled;
-    //   if (isHandled) {
-    //     return;
-    //   }
-    //   if (disabledMap.has(req.resourceType())) {
-    //     req.abort();
-    //   } else {
-    //     req.continue();
-    //   }
-    // });
+    await page.setRequestInterception(true);
+    page.on("request", (req) => {
+      const isHandled =
+        typeof req.isInterceptResolutionHandled === "function"
+          ? req.isInterceptResolutionHandled()
+          : req._interceptionHandled;
+      if (isHandled) {
+        return;
+      }
+      if (disabledMap.has(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
 
     await page.goto(target_url);
     if (wait_eval) {
